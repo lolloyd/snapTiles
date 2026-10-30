@@ -13,6 +13,8 @@
   --line: #dfe6e0;
   --coral: #e98170;
   --gold: #efd36e;
+  --sky: #69a9df;
+  --lavender: #9c86d7;
   --mint: #e7f0e9;
   letter-spacing: 0;
   color-scheme: light;
@@ -1664,4 +1666,52 @@ dialog p {
     animation: none !important;
     transition: none !important;
   }
+}
+
+.event-row {
+  position: relative;
+  padding-left: 12px;
+  --event-accent: var(--pine);
+}
+.event-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 24px;
+  bottom: 24px;
+  width: 4px;
+  border-radius: 4px;
+  background: var(--event-accent);
+}
+.event-row:nth-child(4n + 1) {
+  --event-accent: var(--coral);
+}
+.event-row:nth-child(4n + 2) {
+  --event-accent: var(--sky);
+}
+.event-row:nth-child(4n + 3) {
+  --event-accent: var(--gold);
+}
+.event-row:nth-child(4n + 4) {
+  --event-accent: var(--lavender);
+}
+.bingo-tile:nth-child(4n + 1) {
+  background: #e5f3e9;
+  border-color: #c5dfcd;
+  color: #397052;
+}
+.bingo-tile:nth-child(4n + 2) {
+  background: #fff4ca;
+  border-color: #eadb94;
+  color: #816813;
+}
+.bingo-tile:nth-child(4n + 3) {
+  background: #ffe8e2;
+  border-color: #f0c4ba;
+  color: #a65348;
+}
+.bingo-tile:nth-child(4n + 4) {
+  background: #e4f1ff;
+  border-color: #bfd8f0;
+  color: #386e9a;
 }
