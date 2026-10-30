@@ -1,18 +1,14 @@
 param location string
 param environment string
-param staticWebAppSku string
+param staticWebAppName string
 @secure()
 param sessionSecret string
 
 var suffix = uniqueString(resourceGroup().id)
 var tags = { application: 'SnapTiles', environment: environment }
 
-resource site 'Microsoft.Web/staticSites@2024-04-01' = {
-  name: 'swa-snaptiles-${environment}-${suffix}'
-  location: location
-  sku: { name: staticWebAppSku, tier: staticWebAppSku }
-  tags: tags
-  properties: { provider: 'Custom', stagingEnvironmentPolicy: 'Disabled', allowConfigFileUpdates: false }
+resource site 'Microsoft.Web/staticSites@2025-03-01' existing = {
+  name: staticWebAppName
 }
 
 resource network 'Microsoft.Network/virtualNetworks@2024-05-01' = {

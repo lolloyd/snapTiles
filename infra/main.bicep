@@ -22,13 +22,26 @@ resource group 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   tags: { application: 'SnapTiles', environment: environment, deploymentId: deploymentId }
 }
 
+resource site 'Microsoft.Web/staticSites@2025-03-01' = {
+  scope: group
+  name: 'swa-snaptiles-${environment}-${uniqueString(group.id)}'
+  location: location
+  sku: { name: staticWebAppSku, tier: staticWebAppSku }
+  tags: { application: 'SnapTiles', environment: environment }
+  properties: {
+    provider: 'Custom'
+    stagingEnvironmentPolicy: 'Disabled'
+    allowConfigFileUpdates: true
+  }
+}
+
 module resources './resources.bicep' = {
   scope: group
   params: {
     location: location
     environment: environment
     sessionSecret: sessionSecret
-    staticWebAppSku: staticWebAppSku
+    staticWebAppName: site.name
   }
 }
 
