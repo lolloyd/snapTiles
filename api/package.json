@@ -5,13 +5,19 @@
   "type": "module",
   "main": "dist/api/src/server.js",
   "engines": {
-    "node": ">=24"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "tsx watch src/local.ts",
     "prebuild": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/api/src/server.js"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
   },
   "dependencies": {
     "@azure/identity": "^4.10.2",

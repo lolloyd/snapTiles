@@ -20,14 +20,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - name: Package SQLite API
+      - name: Package source for App Service build
         run: |
-          mkdir deploy-api
-          cp api/package.json api/package-lock.json deploy-api/
-          cp -R api/dist deploy-api/dist
-          npm ci --prefix deploy-api --omit=dev --workspaces=false
+          git archive --format=zip --output snaptiles-source.zip HEAD
       - uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.SNAP_TILES_API_APP_NAME }}
           publish-profile: ${{ secrets.SNAP_TILES_API_PUBLISH_PROFILE }}
-          package: deploy-api
+          package: snaptiles-source.zip

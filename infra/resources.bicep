@@ -106,7 +106,7 @@ resource apiSettings 'Microsoft.Web/sites/config@2024-04-01' = {
   parent: apiApp
   name: 'appsettings'
   properties: {
-    NODE_ENV: 'production'
+    SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
     SQLITE_DB_PATH: '/home/data/snaptiles.sqlite'
     STORAGE_ACCOUNT_NAME: storage.name
     SESSION_SECRET: sessionSecret
