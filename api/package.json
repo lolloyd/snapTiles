@@ -16,9 +16,6 @@
   "allowScripts": {
     "better-sqlite3@12.11.1": true
   },
-  "allowScripts": {
-    "better-sqlite3@12.11.1": true
-  },
   "dependencies": {
     "@azure/identity": "^4.10.2",
     "@azure/storage-blob": "^12.28.0",
