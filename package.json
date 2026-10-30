@@ -1,0 +1,23 @@
+{
+  "name": "snaptiles",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "web",
+    "api"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm run dev -w api\" \"npm run dev -w web -- --host 127.0.0.1\"",
+    "build": "npm run build -w api && npm run build -w web",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "lint": "npm run lint -w web",
+    "check": "npm run test && npm run build && npm run lint"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "concurrently": "^9.2.1",
+    "prettier": "^3.9.10",
+    "vitest": "^5.0.5"
+  }
+}
