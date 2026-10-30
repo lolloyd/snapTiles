@@ -15,6 +15,58 @@ resource site 'Microsoft.Web/staticSites@2024-04-01' = {
   properties: { provider: 'Custom', stagingEnvironmentPolicy: 'Disabled', allowConfigFileUpdates: false }
 }
 
+resource network 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+  name: 'vnet-snaptiles-${environment}-${suffix}'
+  location: location
+  tags: tags
+  properties: { addressSpace: { addressPrefixes: ['10.42.0.0/16'] } }
+}
+
+resource apiSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = {
+  parent: network
+  name: 'api-integration'
+  properties: {
+    addressPrefix: '10.42.0.0/27'
+    serviceEndpoints: [{ service: 'Microsoft.Storage' }]
+    delegations: [{
+      name: 'appService'
+      properties: { serviceName: 'Microsoft.Web/serverFarms' }
+    }]
+  }
+}
+
+resource apiPlan 'Microsoft.Web/serverfarms@2024-04-01' = {
+  name: 'asp-snaptiles-${environment}-${suffix}'
+  location: location
+  tags: tags
+  kind: 'linux'
+  sku: { name: 'B1', tier: 'Basic', size: 'B1', capacity: 1 }
+  properties: { reserved: true, perSiteScaling: false }
+}
+
+resource apiApp 'Microsoft.Web/sites@2024-04-01' = {
+  name: 'api-snaptiles-${environment}-${suffix}'
+  location: location
+  tags: tags
+  kind: 'app,linux'
+  identity: { type: 'SystemAssigned' }
+  properties: {
+    serverFarmId: apiPlan.id
+    httpsOnly: true
+    clientAffinityEnabled: false
+    virtualNetworkSubnetId: apiSubnet.id
+    siteConfig: {
+      linuxFxVersion: 'NODE|24-lts'
+      appCommandLine: 'npm start'
+      alwaysOn: true
+      numberOfWorkers: 1
+      ftpsState: 'Disabled'
+      minTlsVersion: '1.2'
+      vnetRouteAllEnabled: true
+    }
+  }
+}
+
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: 'stsnap${suffix}'
   location: location
@@ -26,8 +78,16 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
     allowBlobPublicAccess: false
-    allowSharedKeyAccess: true
+    allowSharedKeyAccess: false
     defaultToOAuthAuthentication: true
+    publicNetworkAccess: 'Enabled'
+    networkAcls: {
+      bypass: 'None'
+      defaultAction: 'Deny'
+      ipRules: []
+      virtualNetworkRules: [{ id: apiSubnet.id, action: 'Allow' }]
+      resourceAccessRules: []
+    }
   }
 }
 
@@ -37,15 +97,6 @@ resource blobs 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
   properties: {
     deleteRetentionPolicy: { enabled: true, days: 7 }
     containerDeleteRetentionPolicy: { enabled: true, days: 7 }
-    cors: {
-      corsRules: [{
-        allowedOrigins: ['https://${site.properties.defaultHostname}']
-        allowedMethods: ['PUT', 'GET', 'HEAD', 'OPTIONS']
-        allowedHeaders: ['content-type', 'x-ms-blob-type', 'x-ms-version']
-        exposedHeaders: ['etag', 'x-ms-request-id']
-        maxAgeInSeconds: 300
-      }]
-    }
   }
 }
 
@@ -55,56 +106,28 @@ resource uploads 'Microsoft.Storage/storageAccounts/blobServices/containers@2023
   properties: { publicAccess: 'None' }
 }
 
-resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
-  name: 'cosmos-snaptiles-${environment}-${suffix}'
-  location: location
-  tags: tags
-  kind: 'GlobalDocumentDB'
-  properties: {
-    databaseAccountOfferType: 'Standard'
-    capabilities: [{ name: 'EnableServerless' }]
-    locations: [{ locationName: location, failoverPriority: 0, isZoneRedundant: false }]
-    consistencyPolicy: { defaultConsistencyLevel: 'Session' }
-    minimalTlsVersion: 'Tls12'
-    backupPolicy: { type: 'Periodic', periodicModeProperties: { backupIntervalInMinutes: 240, backupRetentionIntervalInHours: 24, backupStorageRedundancy: 'Local' } }
-  }
-}
-
-resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' = {
-  parent: cosmos
-  name: 'snaptilesdb'
-  properties: { resource: { id: 'snaptilesdb' } }
-}
-
-var containerDefinitions = [
-  { name: 'games', partitionKey: '/id', ttl: -1 }
-  { name: 'players', partitionKey: '/gameId', ttl: -1 }
-  { name: 'prompts', partitionKey: '/category', ttl: -1 }
-  { name: 'rateLimits', partitionKey: '/id', ttl: 120 }
-]
-resource containers 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = [for definition in containerDefinitions: {
-  parent: database
-  name: definition.name
-  properties: {
-    resource: {
-      id: definition.name
-      partitionKey: { paths: [definition.partitionKey], kind: 'Hash', version: 2 }
-      defaultTtl: definition.ttl
-      indexingPolicy: { indexingMode: 'consistent', automatic: true, includedPaths: [{ path: '/*' }], excludedPaths: [{ path: '/"_etag"/?' }] }
-    }
-  }
-}]
-
-resource settings 'Microsoft.Web/staticSites/config@2024-04-01' = {
-  parent: site
+resource apiSettings 'Microsoft.Web/sites/config@2024-04-01' = {
+  parent: apiApp
   name: 'appsettings'
   properties: {
-    COSMOS_CONNECTION_STRING: cosmos.listConnectionStrings().connectionStrings[0].connectionString
+    NODE_ENV: 'production'
+    SQLITE_DB_PATH: '/home/data/snaptiles.sqlite'
     STORAGE_ACCOUNT_NAME: storage.name
-    STORAGE_ACCOUNT_KEY: storage.listKeys().keys[0].value
     SESSION_SECRET: sessionSecret
+  }
+}
+
+resource blobAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(uploads.id, apiApp.id, 'Storage Blob Data Contributor')
+  scope: uploads
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: apiApp.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
 output appUrl string = 'https://${site.properties.defaultHostname}'
 output staticWebAppName string = site.name
+output apiAppName string = apiApp.name
+output apiUrl string = 'https://${apiApp.properties.defaultHostName}'

@@ -4,7 +4,7 @@ import { evaluateBingo, publicGame } from "../../shared/domain.js";
 import type { Game, Player } from "../../shared/domain.js";
 import { ApiError, organizer } from "./auth.js";
 import type { Auth } from "./auth.js";
-import type { Store } from "./store.js";
+import type { Store } from "./sqlite-store.js";
 import type { Media } from "./media.js";
 
 const joinSchema = z
@@ -224,7 +224,7 @@ export function createService(
       const { game, player } = await participant(request);
       return { game: publicGame(game), player: await visiblePlayer(player) };
     }
-    if (pathname === "/api/public/uploads/sas" && method === "POST") {
+    if (pathname === "/api/public/uploads/ticket" && method === "POST") {
       const { game, player } = await participant(request);
       active(game);
       const { tileIndex } = tileSchema.parse(await body(request));

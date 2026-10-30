@@ -13,8 +13,8 @@ param location string = 'eastus2'
 @secure()
 param sessionSecret string = '${newGuid()}${newGuid()}'
 
-@allowed(['Free', 'Standard'])
-param staticWebAppSku string = 'Free'
+@allowed(['Standard'])
+param staticWebAppSku string = 'Standard'
 
 resource group 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: 'rg-snaptiles-${environment}-${deploymentId}'
@@ -35,3 +35,5 @@ module resources './resources.bicep' = {
 output resourceGroupName string = group.name
 output appUrl string = resources.outputs.appUrl
 output staticWebAppName string = resources.outputs.staticWebAppName
+output apiAppName string = resources.outputs.apiAppName
+output apiUrl string = resources.outputs.apiUrl

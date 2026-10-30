@@ -1,10 +1,10 @@
 # SnapTiles
 
-Photo scavenger bingo with organizer-managed rooms and account-free participant boards. The application supports 3x3/5x5 grids, custom prompts, QR invitations, compressed direct image uploads, line/blackout wins, private-photo review, and room closure/reopening.
+Photo scavenger bingo with organizer-managed rooms and account-free participant boards. The application supports 3x3/5x5 grids, custom prompts, QR invitations, compressed photo uploads through the API, line/blackout wins, private-photo review, and room closure/reopening.
 
 ## Run Locally
 
-Prerequisites: Node.js 24 LTS and npm. Azure Functions Core Tools is optional for testing the production Functions host; Azure CLI is only needed for infrastructure operations.
+Prerequisites: Node.js 24 LTS and npm. Azure CLI is only needed for infrastructure operations.
 
 ```powershell
 npm ci
@@ -13,7 +13,7 @@ npm run dev
 
 Open http://127.0.0.1:5173 for participants or http://127.0.0.1:5173/admin for organizers. The local API binds to `127.0.0.1:7071`. If either port is in use, stop the conflicting process or adjust both the dev-server configuration and the Playwright configuration. Vite otherwise automatically offers the next available frontend port.
 
-The local server provides a visibly marked organizer identity and uses a JSON database and private image files in `api/.local/`. It does not connect to Azure or create Azure resources. Never expose it to the internet or use it in production. It refuses to run with `NODE_ENV=production` or in an Azure App Service host. The Azure Functions entry point has no local-auth bypass.
+The local server provides a visibly marked organizer identity and uses SQLite at `api/.local/data.sqlite` with private image files under `api/.local/uploads/`. It does not connect to Azure or create Azure resources. Never expose it to the internet or use it in production. It refuses to run with `NODE_ENV=production` or in an Azure App Service host. Missing records from an existing `api/.local/data.json` are imported idempotently into SQLite; the original file is left untouched.
 
 Data persists across API restarts. Without a local `SESSION_SECRET` environment setting of at least 32 characters, restarting the API invalidates existing participant sessions; rejoining creates a new board. Participant tokens last 12 hours and are retained only in the current browser tab's session storage. Reloading the tab restores the board while its token is valid. Leaving removes that token, not the event's data.
 
@@ -35,8 +35,10 @@ npm run test:e2e
 | ---------------------- | -------------------------------------------------------------------------- |
 | `web/`                 | React/TypeScript Vite frontend; routes and SWA security configuration      |
 | `api/src/service.ts`   | Shared API request handling, validation, authorization, and win evaluation |
-| `api/src/functions.ts` | Production Azure Functions v4 adapter                                      |
-| `api/src/local.ts`     | Loopback-only local adapter with disk persistence                          |
+| `api/src/server.ts`    | Production App Service API host; SQLite and managed-identity Blob access   |
+| `api/src/sqlite-store.ts` | SQLite schema, transactions, rate limits, and local data migration       |
+| `api/src/local.ts`     | Loopback-only local API host                                                |
+| `api/src/media.ts`     | Private local/Blob media storage behind short-lived API tickets            |
 | `shared/`              | Game contracts, preset prompt library, and win rules                       |
 | `infra/`               | Bicep provisioning and guarded PowerShell preview/deployment               |
 | `Assets/`              | Sprint-based implementation plan                                           |
@@ -53,23 +55,27 @@ Preview only, using the intended subscription:
 ./infra/Deploy.ps1 -SubscriptionId '<subscription-id>' -Environment dev -Location eastus2 -DeploymentId '<new-id>'
 ```
 
-After reviewing the what-if and costs, rerun with the same arguments plus `-Provision`. The script requests confirmation before provisioning. All resources are in a newly created SnapTiles resource group; it never deletes failed deployments automatically. SWA defaults to the Free SKU; Cosmos serverless requests/storage, Blob capacity/operations/egress, and optional SWA Standard incur usage or plan charges. A deployment preview is not a pricing estimate. Set subscription budgets/alerts in Azure before launch.
+After reviewing the what-if and costs, rerun with the same arguments plus `-Provision`. The script requests confirmation before provisioning. All resources are in a newly created SnapTiles resource group; it never deletes failed deployments automatically. The design uses SWA Standard (required for linked App Service APIs), App Service Basic B1 for one SQLite instance, and usage-billed private Blob Storage. A deployment preview is not a pricing estimate. Set subscription budgets/alerts in Azure before launch.
 
-The template creates SWA, a private HTTPS-only storage account/container, and serverless Cosmos DB with `games` (`/id`), `players` (`/gameId`), `prompts` (`/category`), and `rateLimits` (`/id`, 120-second TTL). Room codes are part of the game ID, making joins point reads instead of cross-partition queries. The built-in prompt library is used when the prompts container is empty.
+The template creates SWA Standard, a one-instance Linux App Service API, a VNet-integrated subnet, and a private HTTPS-only Blob Storage account/container. Storage firewall default action is `Deny`; only the API integration subnet is allowed. The App Service system identity receives `Storage Blob Data Contributor` on the uploads container. Game, player, prompt, and rate-limit data live in SQLite at `/home/data/snaptiles.sqlite` on App Service's persistent home share. Keep the app at one instance: SQLite is not a horizontally scaled database. Room codes are part of game IDs, so room lookup is a local primary-key read.
 
-Secrets are generated/resolved inside deployment and written only to SWA application settings. Outputs contain only the app URL and resource names. The API requires `COSMOS_CONNECTION_STRING`, `STORAGE_ACCOUNT_NAME`, `STORAGE_ACCOUNT_KEY`, and `SESSION_SECRET`; it fails initialization when settings are absent. Do not copy secrets into the frontend, Git, chat, logs, or workflow files.
+The session secret is generated inside deployment and written only to App Service settings. Outputs contain app URLs and resource names, not secrets. The API requires `STORAGE_ACCOUNT_NAME` and `SESSION_SECRET`; Blob authentication uses the App Service managed identity, not an account key. Do not copy secrets into the frontend, Git, chat, logs, or workflow files.
 
-## Publish and Authenticate
+## Automatic SWA Deployment
 
-1. Provision the environment after approval. Keep the output app URL/resource names.
-2. In the new SWA's Azure portal, securely obtain its deployment token and enter it directly in the repository's `production` GitHub environment secret `AZURE_STATIC_WEB_APPS_API_TOKEN`. Do not send the token through chat. Configure environment reviewers for deployment approval.
-3. Run the manual **Deploy SnapTiles** GitHub workflow and select the existing GitHub environment for the target SWA. It validates/builds the workspace, packages the compiled API with production dependencies, and deploys to SWA. Cloud credentials and provisioning are not wired into CI.
-4. SWA built-in Microsoft sign-in is used at `/.auth/login/aad?post_login_redirect_uri=/admin`. Invite organizers with the custom `admin` role through SWA Role Management. Built-in sign-in alone never grants organizer access. The API also verifies the role and game ownership.
-5. Test sign-in, role assignment, room creation, direct Blob uploads, private image display, and closure on the deployed SWA URL. These Azure integration checks cannot be replaced by local tests.
+The existing SnapTiles SWA is `https://witty-flower-0b795680f.6.azurestaticapps.net/`. The Azure-generated workflow at [.github/workflows/azure-static-web-apps-witty-flower-0b795680f.yml](.github/workflows/azure-static-web-apps-witty-flower-0b795680f.yml) runs on pushes to `main`, validates/tests the project, and uploads the built `web/dist` frontend using the SWA deployment secret Azure created. A local commit alone does not trigger GitHub Actions; push the commit to `main`.
 
-Use SWA's managed API integration, which supplies the trusted `x-ms-client-principal` header. Do not expose this API through an independent public Functions endpoint that accepts caller-supplied principal headers. If switching to a standalone backend, add platform token validation/access restrictions before deployment.
+The existing SWA is currently Free, which is sufficient for static frontend deployment. Its resource group currently contains only the SWA, so `/api/*` has no cloud backend yet; organizer and participant data workflows will not work on the deployed site until the API is provisioned and linked.
 
-SWA preview environments are disabled by the template so production databases and photos are not accidentally shared with previews. Provision an isolated staging environment and use a separate deployment token for staging releases. For custom domains, add that exact origin to Blob CORS before testing uploads. No wildcard production CORS is used.
+## API Deployment and Authentication
+
+The manual **Deploy SnapTiles API** workflow requires an App Service created by the infrastructure deployment. Before deploying it, link that App Service to the SWA in the Azure portal. SWA-to-App-Service linking requires SWA Standard and configures the `Azure Static Web Apps (Linked)` identity provider. Do not expose the API to anonymous direct App Service traffic.
+
+Configure the selected GitHub environment with `SNAP_TILES_API_PUBLISH_PROFILE` and the repository variable `SNAP_TILES_API_APP_NAME`. Store the publish profile as a secret. The API workflow deploys only the API; the frontend deploys automatically from `main`.
+
+SWA Microsoft sign-in is used at `/.auth/login/aad?post_login_redirect_uri=/admin`. Invite organizers with the custom `admin` role through SWA Role Management. The API validates the trusted SWA principal and game ownership. The App Service managed identity accesses private Blob Storage through the allowed VNet subnet; browser clients never connect directly to Blob Storage.
+
+Keep the API at one App Service instance; do not enable scale-out or autoscale. For growth beyond one instance, migrate SQLite to a managed relational database before scaling. Provision an isolated staging environment and use separate SWA/API deployment credentials. Test sign-in, role assignment, room creation, API-proxied photo upload/read, and closure in Azure; local tests cannot validate those integrations.
 
 ## API
 
@@ -82,20 +88,21 @@ SWA preview environments are disabled by the template so production databases an
 | PATCH     | `/api/admin/games/:id`                        | Owning organizer; `ACTIVE`/`CLOSED`                   |
 | POST      | `/api/public/join`                            | Room code/display name; issues session                |
 | GET       | `/api/public/session`                         | Participant session restoration/private photo refresh |
-| POST      | `/api/public/uploads/sas`                     | Participant; one tile's five-minute create-only SAS   |
+| POST      | `/api/public/uploads/ticket`                   | Participant; one tile's five-minute API upload ticket |
+| PUT, GET  | `/api/public/media/:blobName`                 | Signed media ticket; proxy private Blob writes/reads  |
 | POST      | `/api/public/submit-tile`                     | Participant; verify blob, replace tile, evaluate win  |
 
-Participant endpoints use `x-participant-token`. JWTs are signed with HS256, restricted issuer/audience, and a 12-hour expiry. Game/player identity comes only from the verified claims. Submissions validate JPEG signatures, MIME type, size (5 MB maximum after compression), blob ownership, tile bounds, and active room status. Each upload has a fresh blob name; create-only SAS permissions prevent overwriting a previously verified blob. Replacement changes the tile record and never increases its count. Optimistic concurrency prevents simultaneous submissions from losing another tile update.
+Participant endpoints use `x-participant-token`. JWTs are signed with HS256, restricted issuer/audience, and a 12-hour expiry. Game/player identity comes only from the verified claims. Submissions validate JPEG signatures, MIME type, size (5 MB maximum after compression), blob ownership, tile bounds, and active room status. Each upload has a fresh blob name; the API writes with a create-only condition to prevent overwriting a previously verified blob. Replacement changes the tile record and never increases its count. SQLite transactions and optimistic revisions prevent simultaneous submissions from losing another tile update.
 
-Photos stay private. Boards/review receive ten-minute read SAS URLs; participant boards refresh every 30 seconds and review refreshes every five minutes. Images selected in an already-open review dialog may need reopening after URL expiry. SAS URLs are bearer credentials: do not log/share them. SAS signing currently uses an account key (service SAS), not managed-identity user delegation. Account keys/connection strings must be rotated as described below.
+Photos stay private. Boards/review receive ten-minute signed API URLs; the API reads/writes Blob using its managed identity over the VNet service endpoint. Participant boards refresh every 30 seconds and review refreshes every five minutes. Media tickets are bearer credentials: do not log/share them. Storage account keys are disabled.
 
-Public requests use distributed Cosmos counters (90/minute per session/client and 600/minute globally), with hashed client/session identifiers and two-minute TTL. The local HTTP adapter has an additional 180/minute source-IP limit. Tune these limits for expected event size; they are application abuse controls, not a substitute for Azure edge/WAF protection.
+Public requests use SQLite transactions for 90/minute per session/client and 600/minute globally, with hashed client/session identifiers and two-minute expiry. The HTTP adapter has an additional 180/minute IP limit. These limits rely on one API instance and are application abuse controls, not a substitute for Azure edge/WAF protection.
 
 ## Operations and Release Gates
 
-- **Rotation:** Generate a new strong session secret through a secure operator workflow and replace the SWA setting; existing participant tokens immediately become invalid. Rotate storage keys in stages using the unused key, update SWA settings, verify uploads/reads, then rotate the previously active key. Update Cosmos connection strings in SWA when rotating Cosmos keys. Never print values to logs.
-- **Monitoring:** Functions emits operation path, status, and duration, without request bodies, tokens, or photo URLs. Set up Azure monitoring, error alerts, request/RU/egress budgets, and an event-size load test before public launch. Application Insights retention/export is not provisioned by this starter template.
-- **Backups:** Cosmos uses periodic backups (four-hour interval, 24-hour retention); Blob soft deletion is enabled for seven days. These settings are not a cross-region disaster-recovery strategy. Validate a restore exercise and agree on recovery objectives before production.
+- **Rotation:** Rotate the App Service `SESSION_SECRET` through secure settings; existing participant tokens immediately become invalid. The API uses managed identity for Blob Storage, so no account key rotation is required. Never print secrets or media tokens to logs.
+- **Monitoring:** App Service emits operation path, status, and duration without request bodies, tokens, or photo URLs. Set up Azure monitoring, error alerts, storage usage budgets, and an event-size load test before public launch. Application Insights retention/export is not provisioned by this starter template.
+- **Backups:** The SQLite database is on the persistent App Service home share, but automated database backups are not provisioned. Configure and test scheduled consistent SQLite backups to a separate private location before production; include restore verification and recovery objectives. Blob soft deletion is enabled for seven days. Neither setting is a cross-region disaster-recovery plan.
 - **Retention/privacy:** Obtain the organizer's photo consent/privacy policy, define event/image retention, and implement/schedule approved cleanup before public launch. Replaced and interrupted-upload blobs are not currently garbage-collected. There is no automated photo moderation or malware-scanning pipeline; the only review action currently supported is viewing submissions.
-- **Rollback:** Redeploy the last known-good Git revision to the same SWA using its environment token, not the fresh-provisioning wrapper. Check data compatibility first; no destructive migrations are included. Keep Cosmos/Blob data intact during application rollback. Deleting an environment/resource group requires a separate explicit operator decision.
-- **Remaining Azure gate:** Bicep compilation and local workflow tests do not establish subscription permissions, regional quota/SKU availability, production identity behavior, actual Azure Blob CORS/SAS behavior, monitoring readiness, or capacity. Verify these against an approved newly provisioned environment before declaring production-ready.
+- **Rollback:** Redeploy the last known-good Git revision using the SWA token and App Service publish profile, not the fresh-provisioning wrapper. Check SQLite schema compatibility first and take a backup before migrations. Deleting an environment/resource group requires a separate explicit operator decision.
+- **Remaining Azure gate:** Bicep compilation and local tests do not establish subscription permissions, regional quota/SKU availability, SWA-to-App-Service linking, managed-identity RBAC propagation, storage firewall routing, backup/restore readiness, or capacity. Verify these in a fresh isolated environment before declaring production-ready.

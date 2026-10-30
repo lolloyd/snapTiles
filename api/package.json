@@ -3,28 +3,29 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "main": "dist/api/src/functions.js",
+  "main": "dist/api/src/server.js",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "tsx watch src/local.ts",
+    "prebuild": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc -p tsconfig.json",
-    "start": "func start"
+    "start": "node dist/api/src/server.js"
   },
   "dependencies": {
-    "@azure/cosmos": "^4.3.1",
-    "@azure/functions": "^4.7.2",
+    "@azure/identity": "^4.10.2",
     "@azure/storage-blob": "^12.28.0",
+    "better-sqlite3": "^12.4.1",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
     "jose": "^6.1.0",
-    "lowdb": "^7.0.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.0",
     "tsx": "^4.20.6",

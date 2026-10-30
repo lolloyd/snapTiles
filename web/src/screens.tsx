@@ -1143,7 +1143,7 @@ function UploadTile({
       const compressed = await compressImage(file);
       setStage("Uploading photo");
       const ticket = await api<{ uploadUrl: string; blobName: string }>(
-        "public/uploads/sas",
+        "public/uploads/ticket",
         { method: "POST", body: { tileIndex: index }, token },
       );
       const response = await fetch(ticket.uploadUrl, {

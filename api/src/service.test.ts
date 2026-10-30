@@ -3,12 +3,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createAuth } from "./auth";
-import { localStore } from "./store";
+import { localStore } from "./sqlite-store";
 import { createService } from "./service";
 import type { Media } from "./media";
+import type { Store } from "./sqlite-store";
 
 const directories: string[] = [];
+const stores: Store[] = [];
 afterEach(async () => {
+  for (const store of stores.splice(0)) store.close?.();
   await Promise.all(
     directories
       .splice(0)
@@ -20,6 +23,7 @@ async function setup(local = true) {
   directories.push(directory);
   const auth = createAuth("test-secret-with-more-than-thirty-two-characters");
   const store = await localStore(directory);
+  stores.push(store);
   const media: Media = {
     async ticket(blobName) {
       return { blobName, uploadUrl: `https://example.test/${blobName}` };
@@ -75,7 +79,7 @@ describe("game API", () => {
     const token = joined.body.participantToken;
     for (const tileIndex of [0, 1, 2]) {
       const ticket = await call(
-        "public/uploads/sas",
+        "public/uploads/ticket",
         "POST",
         { tileIndex },
         token,
@@ -116,7 +120,7 @@ describe("game API", () => {
       ).status,
     ).toBe(409);
     expect(
-      (await call("public/uploads/sas", "POST", { tileIndex: 3 }, token))
+      (await call("public/uploads/ticket", "POST", { tileIndex: 3 }, token))
         .status,
     ).toBe(409);
   });
@@ -136,7 +140,7 @@ describe("game API", () => {
     expect(
       (
         await call(
-          "public/uploads/sas",
+          "public/uploads/ticket",
           "POST",
           { tileIndex: 9 },
           joined.participantToken,
