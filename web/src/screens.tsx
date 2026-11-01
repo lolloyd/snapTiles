@@ -355,7 +355,7 @@ function AdminLayout({
             {identity.local ? "L" : identity.user.name.charAt(0).toUpperCase()}
           </span>
           <div>
-            <strong>{identity.user.name}</strong>
+            <strong title={identity.user.name}>{identity.user.name}</strong>
             <small>
               {identity.local
                 ? "Development only"
@@ -1547,7 +1547,7 @@ function ManageAdmins({ identity }: { identity: Identity | null }) {
           </p>
         </div>
       </div>
-      <form className="join-form" onSubmit={add}>
+      <form className="join-form admin-form" onSubmit={add}>
         <label>
           Work email
           <input

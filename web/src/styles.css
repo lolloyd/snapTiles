@@ -478,9 +478,16 @@ progress::-moz-progress-bar {
   padding-top: 22px;
   font-size: 11px;
 }
+.sidebar-bottom > div {
+  flex: 1;
+  min-width: 0;
+}
 .sidebar-bottom strong {
   display: block;
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sidebar-bottom small {
   display: block;
@@ -492,7 +499,12 @@ progress::-moz-progress-bar {
   padding: 32px 45px 60px;
   max-width: 1500px;
   width: 100%;
-  margin: auto;
+  margin: 0 auto;
+  align-self: start;
+}
+.admin-form {
+  max-width: 480px;
+  margin: 0 0 24px;
 }
 .breadcrumb {
   display: flex;
