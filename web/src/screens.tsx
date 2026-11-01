@@ -308,7 +308,9 @@ function AdminLayout({
           Sign in with Microsoft
           <ArrowRight size={18} />
         </a>
-        <p className="muted">Your account must have the admin role.</p>
+        <p className="muted">
+          Your account must be added as an admin by a SnapTiles owner.
+        </p>
       </main>
     );
   if (!identity.user.roles.includes("admin"))
