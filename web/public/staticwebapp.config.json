@@ -1,9 +1,9 @@
 {
   "routes": [
-    { "route": "/admin*", "allowedRoles": ["admin"] },
-    { "route": "/api/admin/*", "allowedRoles": ["admin"] },
-    { "route": "/api/games", "allowedRoles": ["admin"] },
-    { "route": "/api/prompts", "allowedRoles": ["admin"] },
+    { "route": "/admin*", "allowedRoles": ["authenticated"] },
+    { "route": "/api/admin/*", "allowedRoles": ["authenticated"] },
+    { "route": "/api/games", "allowedRoles": ["authenticated"] },
+    { "route": "/api/prompts", "allowedRoles": ["authenticated"] },
     { "route": "/api/public/*", "allowedRoles": ["anonymous"] }
   ],
   "responseOverrides": {

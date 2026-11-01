@@ -5,6 +5,12 @@ import path from "node:path";
 import type { Game, Player, Prompt } from "../../shared/domain.js";
 import { presetPrompts } from "../../shared/domain.js";
 
+export interface AdminRecord {
+  email: string;
+  addedBy: string;
+  addedAt: string;
+}
+
 export interface VersionedPlayer {
   player: Player;
   version: string;
@@ -24,6 +30,10 @@ export interface Store {
   ): Promise<{ players: Player[]; cursor?: string }>;
   prompts(): Promise<Prompt[]>;
   consumeRate(key: string, limit: number): Promise<boolean>;
+  isAdmin(email: string): Promise<boolean>;
+  listAdmins(): Promise<AdminRecord[]>;
+  addAdmin(admin: AdminRecord): Promise<boolean>;
+  removeAdmin(email: string): Promise<boolean>;
   close?(): void;
 }
 
@@ -65,6 +75,11 @@ export function sqliteStore(databasePath: string): SqliteStore {
       id TEXT PRIMARY KEY,
       count INTEGER NOT NULL,
       expires_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS admins (
+      email TEXT PRIMARY KEY,
+      added_by TEXT NOT NULL,
+      added_at TEXT NOT NULL
     );
   `);
   const seedPrompts = database.transaction(() => {
@@ -185,6 +200,33 @@ export function sqliteStore(databasePath: string): SqliteStore {
       if (++rateCleanupCounter % 256 === 0)
         database.prepare("DELETE FROM rate_limits WHERE expires_at <= ?").run(now);
       return allowed;
+    },
+    async isAdmin(email) {
+      return !!database
+        .prepare("SELECT 1 FROM admins WHERE email = ?")
+        .get(email);
+    },
+    async listAdmins() {
+      return database
+        .prepare(
+          "SELECT email, added_by AS addedBy, added_at AS addedAt FROM admins ORDER BY email",
+        )
+        .all() as AdminRecord[];
+    },
+    async addAdmin(admin) {
+      return (
+        database
+          .prepare(
+            "INSERT OR IGNORE INTO admins (email, added_by, added_at) VALUES (?, ?, ?)",
+          )
+          .run(admin.email, admin.addedBy, admin.addedAt).changes === 1
+      );
+    },
+    async removeAdmin(email) {
+      return (
+        database.prepare("DELETE FROM admins WHERE email = ?").run(email)
+          .changes === 1
+      );
     },
     close() {
       database.close();

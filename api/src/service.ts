@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { evaluateBingo, publicGame } from "../../shared/domain.js";
 import type { Game, Player } from "../../shared/domain.js";
-import { ApiError, organizer } from "./auth.js";
+import { ApiError, OWNER_EMAILS, isOwner, principal } from "./auth.js";
 import type { Auth } from "./auth.js";
 import type { Store } from "./sqlite-store.js";
 import type { Media } from "./media.js";
@@ -34,6 +34,11 @@ const submitSchema = tileSchema.extend({
 const statusSchema = z
   .object({ status: z.enum(["ACTIVE", "CLOSED"]) })
   .strict();
+const adminSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
+  })
+  .strict();
 const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const roomCode = () =>
   Array.from(randomBytes(6), (value) => alphabet[value % alphabet.length]).join(
@@ -46,6 +51,22 @@ export function createService(
   auth: Auth,
   local = false,
 ) {
+  async function roles(email: string) {
+    if (local || isOwner(email)) return ["admin", "owner"];
+    return (await store.isAdmin(email)) ? ["admin"] : [];
+  }
+  async function organizer(request: Request) {
+    const user = principal(request.headers, local);
+    if (!(await roles(user.email)).includes("admin"))
+      throw new ApiError(403, "An organizer role is required.");
+    return user.userId;
+  }
+  function owner(request: Request) {
+    const user = principal(request.headers, local);
+    if (!local && !isOwner(user.email))
+      throw new ApiError(403, "Only owners can manage admins.");
+    return user;
+  }
   async function gameById(id: string) {
     const game = await store.getGame(id);
     if (!game) throw new ApiError(404, "Room not found.");
@@ -123,22 +144,59 @@ export function createService(
     if (pathname === "/api/me" && method === "GET") {
       if (local)
         return {
-          user: { name: "Local organizer", roles: ["admin"] },
+          user: { name: "Local organizer", roles: await roles("") },
           local: true,
         };
       try {
-        organizer(request.headers, false);
-        return { user: { name: "Organizer", roles: ["admin"] }, local: false };
+        const user = principal(request.headers, false);
+        return {
+          user: { name: user.email, roles: await roles(user.email) },
+          local: false,
+        };
       } catch {
         return { user: null, local: false };
       }
     }
+    if (pathname === "/api/admin/admins") {
+      const user = owner(request);
+      if (method === "GET")
+        return { owners: OWNER_EMAILS, admins: await store.listAdmins() };
+      if (method === "POST") {
+        const { email } = adminSchema.parse(await body(request));
+        if (isOwner(email))
+          throw new ApiError(409, "This person is already an owner.");
+        if (
+          !(await store.addAdmin({
+            email,
+            addedBy: user.email,
+            addedAt: new Date().toISOString(),
+          }))
+        )
+          throw new ApiError(409, "This person is already an admin.");
+        return { admins: await store.listAdmins() };
+      }
+    }
+    const adminMatch = pathname.match(/^\/api\/admin\/admins\/([^/]{1,512})$/);
+    if (adminMatch && method === "DELETE") {
+      owner(request);
+      let email: string;
+      try {
+        email = decodeURIComponent(adminMatch[1]).trim().toLowerCase();
+      } catch {
+        throw new ApiError(400, "Invalid email address.");
+      }
+      if (isOwner(email))
+        throw new ApiError(403, "Owners cannot be removed.");
+      if (!(await store.removeAdmin(email)))
+        throw new ApiError(404, "Admin not found.");
+      return { admins: await store.listAdmins() };
+    }
     if (pathname === "/api/prompts" && method === "GET") {
-      organizer(request.headers, local);
+      await organizer(request);
       return { prompts: await store.prompts() };
     }
     if (pathname === "/api/games") {
-      const adminId = organizer(request.headers, local);
+      const adminId = await organizer(request);
       if (method === "GET") return { games: await store.listGames(adminId) };
       if (method === "POST") {
         const input = gameSchema.parse(await body(request));
@@ -178,7 +236,7 @@ export function createService(
       /^\/api\/admin\/games\/(game-[A-Z2-9]{6})(\/submissions)?$/,
     );
     if (gameMatch) {
-      const game = await owned(gameMatch[1], organizer(request.headers, local));
+      const game = await owned(gameMatch[1], await organizer(request));
       if (method === "PATCH" && !gameMatch[2]) {
         const { status } = statusSchema.parse(await body(request));
         const updated = { ...game, status };

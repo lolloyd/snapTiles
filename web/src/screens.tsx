@@ -17,6 +17,7 @@ import {
   CheckCheck,
   ChevronRight,
   Copy,
+  Crown,
   Download,
   ExternalLink,
   Grid2X2,
@@ -30,7 +31,9 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Trophy,
+  UserCog,
   Users,
   X,
 } from "lucide-react";
@@ -56,6 +59,7 @@ type Identity = {
   user: { name: string; roles: string[] } | null;
   local: boolean;
 };
+type AdminRecord = { email: string; addedBy: string; addedAt: string };
 const tokenKey = "snaptiles-session";
 
 function Brand() {
@@ -307,6 +311,25 @@ function AdminLayout({
         <p className="muted">Your account must have the admin role.</p>
       </main>
     );
+  if (!identity.user.roles.includes("admin"))
+    return (
+      <main className="auth-page">
+        <ShieldCheck size={36} />
+        <h1>Organizer access required</h1>
+        <p>
+          {identity.user.name} is not an organizer. Ask a SnapTiles owner to
+          add you as an admin.
+        </p>
+        <a
+          className="secondary"
+          href="/.auth/logout?post_logout_redirect_uri=/"
+        >
+          Sign out
+          <LogOut size={18} />
+        </a>
+      </main>
+    );
+  const isOwner = identity.user.roles.includes("owner");
   return (
     <div className="workspace">
       <aside className="sidebar">
@@ -319,12 +342,24 @@ function AdminLayout({
           <Plus size={18} />
           New event
         </NavLink>
+        {isOwner && (
+          <NavLink to="/admin/admins">
+            <UserCog size={18} />
+            Admins
+          </NavLink>
+        )}
         <div className="sidebar-bottom">
-          <span className="avatar">{identity.local ? "L" : "O"}</span>
+          <span className="avatar">
+            {identity.local ? "L" : identity.user.name.charAt(0).toUpperCase()}
+          </span>
           <div>
             <strong>{identity.user.name}</strong>
             <small>
-              {identity.local ? "Development only" : "Event organizer"}
+              {identity.local
+                ? "Development only"
+                : isOwner
+                  ? "Owner"
+                  : "Event organizer"}
             </small>
           </div>
           {!identity.local && (
@@ -1427,6 +1462,151 @@ function PlayerBoard() {
   );
 }
 
+function ManageAdmins({ identity }: { identity: Identity | null }) {
+  const [owners, setOwners] = useState<string[]>([]);
+  const [admins, setAdmins] = useState<AdminRecord[]>([]);
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const isOwner = !!identity?.user?.roles.includes("owner");
+  useEffect(() => {
+    if (!isOwner) return;
+    const controller = new AbortController();
+    api<{ owners: string[]; admins: AdminRecord[] }>("admin/admins", {
+      signal: controller.signal,
+    })
+      .then((result) => {
+        setOwners(result.owners);
+        setAdmins(result.admins);
+      })
+      .catch((failure) => {
+        if (!controller.signal.aborted) setError(errorMessage(failure));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [isOwner]);
+  if (!isOwner)
+    return <ErrorNotice message="Only owners can manage admins." />;
+  async function add(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api<{ admins: AdminRecord[] }>("admin/admins", {
+        method: "POST",
+        body: { email },
+      });
+      setAdmins(result.admins);
+      setEmail("");
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(target: string) {
+    if (!confirm(`Remove ${target} as an admin?`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api<{ admins: AdminRecord[] }>(
+        `admin/admins/${encodeURIComponent(target)}`,
+        { method: "DELETE" },
+      );
+      setAdmins(result.admins);
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <div className="breadcrumb">
+        Workspace
+        <ChevronRight size={14} />
+        Admins
+      </div>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">ACCESS</div>
+          <h1>
+            Admins
+            <span className="heading-count">
+              {owners.length + admins.length}
+            </span>
+          </h1>
+          <p className="muted">
+            Admins can create and run events. Owners are permanent and are the
+            only people who can add or remove admins.
+          </p>
+        </div>
+      </div>
+      <form className="join-form" onSubmit={add}>
+        <label>
+          Work email
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="name@3cloudsolutions.com"
+            required
+            maxLength={254}
+            autoComplete="off"
+          />
+        </label>
+        <button className="primary" disabled={busy || !email.trim()}>
+          <Plus size={18} />
+          Add admin
+        </button>
+      </form>
+      <ErrorNotice message={error} />
+      {loading ? (
+        <Busy label="Loading admins" />
+      ) : (
+        <div className="event-list">
+          {owners.map((owner) => (
+            <div className="event-row" key={owner}>
+              <span className="event-art gold">
+                <Crown size={24} />
+              </span>
+              <div className="event-info">
+                <h2>{owner}</h2>
+                <p>Owner · cannot be removed</p>
+              </div>
+            </div>
+          ))}
+          {admins.map((admin) => (
+            <div className="event-row" key={admin.email}>
+              <span className="event-art green">
+                <UserCog size={24} />
+              </span>
+              <div className="event-info">
+                <h2>{admin.email}</h2>
+                <p>
+                  Admin · added by {admin.addedBy} on{" "}
+                  {dateLabel(admin.addedAt)}
+                </p>
+              </div>
+              <button
+                className="icon-button"
+                title={`Remove ${admin.email}`}
+                disabled={busy}
+                onClick={() => remove(admin.email)}
+              >
+                <Trash2 size={17} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function App() {
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [error, setError] = useState("");
@@ -1471,6 +1651,14 @@ export default function App() {
           element={
             <AdminLayout identity={identity}>
               <ReviewEvent />
+            </AdminLayout>
+          }
+        />
+        <Route
+          path="/admin/admins"
+          element={
+            <AdminLayout identity={identity}>
+              <ManageAdmins identity={identity} />
             </AdminLayout>
           }
         />

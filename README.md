@@ -73,7 +73,7 @@ The manual **Deploy SnapTiles API** workflow requires an App Service created by 
 
 Configure the selected GitHub environment with `SNAP_TILES_API_PUBLISH_PROFILE` and the repository variable `SNAP_TILES_API_APP_NAME`. Store the publish profile as a secret. The API workflow deploys only the API; the frontend deploys automatically from `main`.
 
-SWA Microsoft sign-in is used at `/.auth/login/aad?post_login_redirect_uri=/admin`. Invite organizers with the custom `admin` role through SWA Role Management. The API validates the trusted SWA principal and game ownership. The App Service managed identity accesses private Blob Storage through the allowed VNet subnet; browser clients never connect directly to Blob Storage.
+SWA Microsoft sign-in is used at `/.auth/login/aad?post_login_redirect_uri=/admin`; SWA only requires the user to be `authenticated`. Organizer access is decided by the API: the owners hard-coded in `OWNER_EMAILS` ([api/src/auth.ts](api/src/auth.ts)) are permanent admins and are the only users who can add/remove other admins at `/admin/admins`. Added admins are stored in the SQLite `admins` table and matched on the SWA principal's `userDetails` (email). SWA Role Management roles are not used. The API validates the trusted SWA principal and game ownership. The App Service managed identity accesses private Blob Storage through the allowed VNet subnet; browser clients never connect directly to Blob Storage.
 
 Keep the API at one App Service instance; do not enable scale-out or autoscale. For growth beyond one instance, migrate SQLite to a managed relational database before scaling. Provision an isolated staging environment and use separate SWA/API deployment credentials. Test sign-in, role assignment, room creation, API-proxied photo upload/read, and closure in Azure; local tests cannot validate those integrations.
 
@@ -86,6 +86,8 @@ Keep the API at one App Service instance; do not enable scale-out or autoscale. 
 | GET       | `/api/prompts`                                | Organizer prompt library                              |
 | GET       | `/api/admin/games/:id/submissions?cursor=...` | Owning organizer; pages of 30                         |
 | PATCH     | `/api/admin/games/:id`                        | Owning organizer; `ACTIVE`/`CLOSED`                   |
+| GET, POST | `/api/admin/admins`                           | Owners; list owners/admins, add admin by email        |
+| DELETE    | `/api/admin/admins/:email`                    | Owners; remove admin (owners cannot be removed)       |
 | POST      | `/api/public/join`                            | Room code/display name; issues session                |
 | GET       | `/api/public/session`                         | Participant session restoration/private photo refresh |
 | POST      | `/api/public/uploads/ticket`                   | Participant; one tile's five-minute API upload ticket |

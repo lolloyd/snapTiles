@@ -164,9 +164,16 @@ describe("game API", () => {
   it("enforces organizer roles and ownership in production mode", async () => {
     const { call, gameInput } = await setup(false);
     const principal = (userId: string, roles: string[]) =>
-      Buffer.from(JSON.stringify({ userId, userRoles: roles })).toString(
-        "base64",
-      );
+      Buffer.from(
+        JSON.stringify({ userId, userDetails: `${userId}@example.com`, userRoles: roles }),
+      ).toString("base64");
+    const ownerPrincipal = Buffer.from(
+      JSON.stringify({
+        userId: "owner-id",
+        userDetails: "Lloyd.Miguel@3cloudsolutions.com",
+        userRoles: ["authenticated"],
+      }),
+    ).toString("base64");
     expect((await call("games")).status).toBe(401);
     expect(
       (
@@ -175,17 +182,22 @@ describe("game API", () => {
           "GET",
           undefined,
           undefined,
-          principal("member", ["authenticated"]),
+          principal("member", ["authenticated", "admin"]),
         )
       ).status,
     ).toBe(403);
+    for (const email of ["owner@example.com", "other@example.com"])
+      expect(
+        (await call("admin/admins", "POST", { email }, undefined, ownerPrincipal))
+          .status,
+      ).toBe(200);
     const game = (
       await call(
         "games",
         "POST",
         gameInput,
         undefined,
-        principal("owner", ["admin"]),
+        principal("owner", ["authenticated"]),
       )
     ).body.game;
     expect(
@@ -195,10 +207,75 @@ describe("game API", () => {
           "GET",
           undefined,
           undefined,
-          principal("other", ["admin"]),
+          principal("other", ["authenticated"]),
         )
       ).status,
     ).toBe(403);
+  });
+  it("lets only owners manage admins and protects owners from removal", async () => {
+    const { call } = await setup(false);
+    const as = (email: string) =>
+      Buffer.from(
+        JSON.stringify({ userId: email, userDetails: email, userRoles: ["authenticated"] }),
+      ).toString("base64");
+    const owner = as("baron.paredes@3cloudsolutions.com");
+    const admin = as("new.admin@example.com");
+
+    expect((await call("admin/admins", "GET", undefined, undefined, admin)).status).toBe(403);
+    expect(
+      (await call("admin/admins", "POST", { email: "not-an-email" }, undefined, owner)).status,
+    ).toBe(400);
+    expect(
+      (await call("admin/admins", "POST", { email: " New.Admin@Example.com " }, undefined, owner))
+        .body.admins,
+    ).toMatchObject([
+      { email: "new.admin@example.com", addedBy: "baron.paredes@3cloudsolutions.com" },
+    ]);
+    expect(
+      (await call("admin/admins", "POST", { email: "new.admin@example.com" }, undefined, owner))
+        .status,
+    ).toBe(409);
+    expect((await call("me", "GET", undefined, undefined, admin)).body.user.roles).toEqual([
+      "admin",
+    ]);
+    expect((await call("games", "GET", undefined, undefined, admin)).status).toBe(200);
+    expect((await call("admin/admins", "GET", undefined, undefined, admin)).status).toBe(403);
+    expect(
+      (
+        await call(
+          `admin/admins/${encodeURIComponent("ronaldo.aquino@3cloudsolutions.com")}`,
+          "DELETE",
+          undefined,
+          undefined,
+          owner,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          `admin/admins/${encodeURIComponent("new.admin@example.com")}`,
+          "DELETE",
+          undefined,
+          undefined,
+          admin,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          `admin/admins/${encodeURIComponent("new.admin@example.com")}`,
+          "DELETE",
+          undefined,
+          undefined,
+          owner,
+        )
+      ).body.admins,
+    ).toEqual([]);
+    expect((await call("games", "GET", undefined, undefined, admin)).status).toBe(403);
+    const listed = await call("admin/admins", "GET", undefined, undefined, owner);
+    expect(listed.body.owners).toHaveLength(3);
   });
   it("rejects expired, altered, and wrong-audience sessions", async () => {
     const { auth } = await setup();
