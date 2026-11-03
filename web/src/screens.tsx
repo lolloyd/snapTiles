@@ -52,7 +52,13 @@ import {
   compressImage,
   dateLabel,
   errorMessage,
+  photoFileName,
+  playerPhotos,
+  renderPlayerCard,
   RequestError,
+  safeFileName,
+  saveBlob,
+  zipBlob,
 } from "./lib";
 
 type Identity = {
@@ -879,9 +885,78 @@ function ReviewEvent() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmStatus, setConfirmStatus] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [photo, setPhoto] = useState<{ url: string; text: string } | null>(
-    null,
-  );
+  const [photo, setPhoto] = useState<{
+    url: string;
+    text: string;
+    index: number;
+  } | null>(null);
+  const [exporting, setExporting] = useState("");
+  const playerFileName = (player: Player) =>
+    `${safeFileName(player.displayName, "player")}-${player.id.slice(-6)}`;
+  async function exportTask(task: () => Promise<void>) {
+    setError("");
+    try {
+      await task();
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setExporting("");
+    }
+  }
+  function downloadCard(current: Game, player: Player) {
+    return exportTask(async () => {
+      setExporting("Creating card");
+      const card = await renderPlayerCard(
+        current,
+        player,
+        await playerPhotos(player),
+      );
+      saveBlob(card, `${playerFileName(player)}-card.png`);
+    });
+  }
+  function downloadPhotos(current: Game, player: Player) {
+    return exportTask(async () => {
+      setExporting("Collecting photos");
+      const folder = playerFileName(player);
+      const files: Record<string, Blob> = {};
+      for (const [index, blob] of await playerPhotos(player))
+        files[`${folder}/${photoFileName(index, current.promptSlots[index].text)}`] =
+          blob;
+      saveBlob(await zipBlob(files), `${folder}-photos.zip`);
+    });
+  }
+  function downloadAll(current: Game) {
+    return exportTask(async () => {
+      setExporting("Loading players");
+      const everyone: Player[] = [];
+      let next: string | undefined;
+      do {
+        const page = await api<{ players: Player[]; cursor?: string }>(
+          `admin/games/${current.id}/submissions${next ? `?cursor=${encodeURIComponent(next)}` : ""}`,
+        );
+        everyone.push(...page.players);
+        next = page.cursor;
+      } while (next);
+      const root = `snaptiles-${current.roomCode}`;
+      const files: Record<string, Blob> = {};
+      for (const [position, player] of everyone.entries()) {
+        setExporting(`Preparing ${position + 1}/${everyone.length}`);
+        const photos = await playerPhotos(player);
+        const name = playerFileName(player);
+        files[`${root}/cards/${name}.png`] = await renderPlayerCard(
+          current,
+          player,
+          photos,
+        );
+        for (const [index, blob] of photos)
+          files[
+            `${root}/photos/${name}/${photoFileName(index, current.promptSlots[index].text)}`
+          ] = blob;
+      }
+      setExporting("Creating ZIP");
+      saveBlob(await zipBlob(files), `${root}.zip`);
+    });
+  }
   async function load(append = false) {
     try {
       const result = await api<{
@@ -984,6 +1059,21 @@ function ReviewEvent() {
                 onClick={() => void load()}
               >
                 <RefreshCw size={18} className={loading ? "spin" : ""} />
+              </button>
+              <button
+                className="secondary"
+                disabled={!!exporting || players.length === 0}
+                title="Download every player card and original photo as a ZIP"
+                onClick={() => void downloadAll(game)}
+              >
+                {exporting && !selected ? (
+                  <Busy label={exporting} />
+                ) : (
+                  <>
+                    <Download size={17} />
+                    Download all
+                  </>
+                )}
               </button>
               <button
                 className="secondary"
@@ -1114,7 +1204,11 @@ function ReviewEvent() {
                       disabled={!tile?.photoUrl}
                       onClick={() =>
                         tile?.photoUrl &&
-                        setPhoto({ url: tile.photoUrl, text: slot.text })
+                        setPhoto({
+                          url: tile.photoUrl,
+                          text: slot.text,
+                          index: slot.index,
+                        })
                       }
                     >
                       {tile?.photoUrl ? (
@@ -1127,11 +1221,45 @@ function ReviewEvent() {
                   );
                 })}
               </div>
+              <div className="form-actions">
+                <button
+                  className="secondary"
+                  disabled={!!exporting || selected.tiles.length === 0}
+                  onClick={() => void downloadPhotos(game, selected)}
+                >
+                  <Download size={17} />
+                  Original photos
+                </button>
+                <button
+                  className="primary"
+                  disabled={!!exporting}
+                  onClick={() => void downloadCard(game, selected)}
+                >
+                  {exporting ? (
+                    <Busy label={exporting} />
+                  ) : (
+                    <>
+                      <Download size={17} />
+                      Player card
+                    </>
+                  )}
+                </button>
+              </div>
             </Modal>
           )}
           {photo && (
             <Modal title={photo.text} onClose={() => setPhoto(null)}>
               <img className="full-photo" src={photo.url} alt={photo.text} />
+              <div className="form-actions">
+                <a
+                  className="primary"
+                  href={photo.url}
+                  download={photoFileName(photo.index, photo.text)}
+                >
+                  <Download size={17} />
+                  Download original
+                </a>
+              </div>
             </Modal>
           )}
         </>

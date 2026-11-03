@@ -69,10 +69,32 @@ test("create, invite, join, upload a winning line, review, and close", async ({
   await expect(page.locator(".player-card")).toContainText("Bingo!");
   await page.locator(".player-card").click();
   await expect(page.locator(".review-board img")).toHaveCount(3);
+  const [card] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Player card" }).click(),
+  ]);
+  expect(card.suggestedFilename()).toMatch(/^Alex-M-[\w-]{6}-card\.png$/);
+  const [photos] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Original photos" }).click(),
+  ]);
+  expect(photos.suggestedFilename()).toMatch(/-photos\.zip$/);
+  await page.locator(".review-board .bingo-tile.filled").first().click();
+  const [original] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Download original" }).click(),
+  ]);
+  expect(original.suggestedFilename()).toMatch(/^01-.*\.jpg$/);
+  await page.getByRole("button", { name: "Close dialog" }).last().click();
   await page.getByRole("button", { name: "Close dialog" }).click();
   await page.getByRole("button", { name: "Close room", exact: true }).click();
   await page.getByRole("button", { name: "Confirm", exact: true }).click();
   await expect(page.getByRole("button", { name: "Reopen room" })).toBeVisible();
+  const [archive] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Download all" }).click(),
+  ]);
+  expect(archive.suggestedFilename()).toMatch(/^snaptiles-[A-Z2-9]{6}\.zip$/);
   await page.goto("/play/board");
   await expect(
     page.getByText("This room has wrapped up. Your moments are still here."),
