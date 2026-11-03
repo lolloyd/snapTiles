@@ -67,13 +67,19 @@ async function setup(local = true) {
 describe("game API", () => {
   it("creates, joins, uploads, wins, replaces, restores, and closes a game", async () => {
     const { call, gameInput } = await setup();
-    const created = await call("games", "POST", gameInput);
+    const created = await call("games", "POST", {
+      ...gameInput,
+      description: "  Meet at the lobby.\nPrizes at 5pm.  ",
+    });
     expect(created.status).toBe(200);
     const game = created.body.game;
     const joined = await call("public/join", "POST", {
       roomCode: game.roomCode.toLowerCase(),
       displayName: " Alex ",
     });
+    expect(joined.body.game.description).toBe(
+      "Meet at the lobby.\nPrizes at 5pm.",
+    );
     expect(joined.body.game.adminId).toBeUndefined();
     expect(joined.body.player.displayName).toBe("Alex");
     const token = joined.body.participantToken;
@@ -128,6 +134,14 @@ describe("game API", () => {
     const { call, gameInput } = await setup();
     expect(
       (await call("games", "POST", { ...gameInput, prompts: ["one"] })).status,
+    ).toBe(400);
+    expect(
+      (
+        await call("games", "POST", {
+          ...gameInput,
+          description: "x".repeat(501),
+        })
+      ).status,
     ).toBe(400);
     expect((await call("public/session")).status).toBe(401);
     const game = (await call("games", "POST", gameInput)).body.game;

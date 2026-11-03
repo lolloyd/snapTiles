@@ -620,6 +620,7 @@ function Events() {
 
 function CreateEvent() {
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [gridSize, setGridSize] = useState<GridSize>(3);
   const [winCondition, setWinCondition] = useState<WinCondition>("LINE");
   const [prompts, setPrompts] = useState<string[]>([]);
@@ -654,6 +655,7 @@ function CreateEvent() {
         method: "POST",
         body: {
           title,
+          description,
           gridSize,
           winCondition,
           prompts: prompts.slice(0, gridSize ** 2),
@@ -692,6 +694,16 @@ function CreateEvent() {
                 onChange={(event) => setTitle(event.target.value)}
                 required
                 maxLength={100}
+              />
+            </label>
+            <label>
+              Description <span className="muted">(optional, shown to players)</span>
+              <textarea
+                placeholder="What's the occasion? Share the theme, rules, or prizes."
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                maxLength={500}
+                rows={3}
               />
             </label>
             <div className="field-row">
@@ -1090,6 +1102,9 @@ function ReviewEvent() {
             <div>
               <div className="eyebrow">EVENT ROOM / {game.roomCode}</div>
               <h1>{game.title}</h1>
+              {game.description && (
+                <p className="event-description">{game.description}</p>
+              )}
               <div className="inline-meta">
                 <Status status={game.status} />
                 <span>
@@ -1552,6 +1567,9 @@ function PlayerBoard() {
               <RefreshCw size={16} />
             </button>
           </div>
+          {game.description && (
+            <p className="event-description">{game.description}</p>
+          )}
           {player.hasWon && (
             <div className="win-banner" role="status">
               <Trophy size={28} />

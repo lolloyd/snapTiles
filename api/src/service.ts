@@ -20,6 +20,7 @@ const joinSchema = z
 const gameSchema = z
   .object({
     title: z.string().trim().min(1).max(100),
+    description: z.string().trim().max(500).optional(),
     gridSize: z.union([z.literal(3), z.literal(5)]),
     winCondition: z.enum(["LINE", "BLACKOUT"]),
     prompts: z.array(z.string().trim().min(1).max(140)).max(25),
@@ -208,6 +209,7 @@ export function createService(
             id: `game-${code}`,
             adminId,
             title: input.title,
+            ...(input.description ? { description: input.description } : {}),
             roomCode: code,
             gridSize: input.gridSize,
             winCondition: input.winCondition,

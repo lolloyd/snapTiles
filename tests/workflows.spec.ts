@@ -8,6 +8,9 @@ test("create, invite, join, upload a winning line, review, and close", async ({
   await page.goto("/admin/new");
   const title = `Team adventure ${Date.now()}`;
   await page.getByLabel("Event name").fill(title);
+  await page
+    .getByLabel("Description")
+    .fill("Snap your team around the office.");
   await page.getByRole("button", { name: "Create event", exact: true }).click();
   const invite = page.getByRole("dialog", { name: "Invite your people" });
   await expect(invite).toBeVisible();
@@ -28,6 +31,9 @@ test("create, invite, join, upload a winning line, review, and close", async ({
   await page.getByLabel("Your name").fill("Alex M.");
   await page.getByRole("button", { name: "Join room", exact: true }).click();
   await expect(page.locator(".bingo-tile")).toHaveCount(9);
+  await expect(page.locator(".event-description")).toHaveText(
+    "Snap your team around the office.",
+  );
   const photo = await page.screenshot();
   for (const index of [0, 1, 2]) {
     await page.locator(".bingo-tile").nth(index).click();

@@ -19,6 +19,7 @@ export interface Game {
   id: string;
   adminId: string;
   title: string;
+  description?: string;
   roomCode: string;
   gridSize: GridSize;
   status: GameStatus;

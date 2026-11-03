@@ -27,7 +27,8 @@ body {
 }
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 button,
@@ -49,14 +50,16 @@ button:disabled {
 }
 button,
 input,
-select {
+select,
+textarea {
   border-radius: 6px;
 }
 button {
   color: inherit;
 }
 input,
-select {
+select,
+textarea {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid #cdd8d0;
@@ -64,8 +67,13 @@ select {
   color: var(--ink);
   min-width: 0;
 }
+textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: 2px solid #78a38c;
   outline-offset: 2px;
 }
@@ -74,7 +82,8 @@ a:focus-visible {
   outline: 3px solid #db9f31;
   outline-offset: 3px;
 }
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
   color: #97a39a;
 }
 h1,
@@ -1101,6 +1110,19 @@ dialog p {
 }
 .player-subheading .icon-button {
   margin-left: auto;
+}
+.event-description {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: -14px 0 26px;
+}
+.page-heading .event-description {
+  margin: 10px 0 0;
+  max-width: 720px;
+  color: var(--muted);
 }
 .board-progress {
   display: flex;
