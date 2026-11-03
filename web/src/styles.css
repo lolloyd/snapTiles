@@ -409,6 +409,16 @@ progress::-moz-progress-bar {
   min-height: 47px;
   margin-top: 3px;
 }
+.resume-card {
+  text-align: center;
+  align-items: center;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+  line-height: 1.5;
+}
 .join-footer {
   display: flex;
   align-items: center;

@@ -55,6 +55,13 @@ test("create, invite, join, upload a winning line, review, and close", async ({
         (image: HTMLImageElement) => image.complete && image.naturalWidth > 0,
       ),
   ).toBe(true);
+  const returning = await page.context().newPage();
+  await returning.goto(participantUrl);
+  await expect(returning.getByText("You're already playing in room")).toBeVisible();
+  await returning.getByRole("link", { name: "Back to my board" }).click();
+  await expect(returning.getByText("Hey, Alex M.")).toBeVisible();
+  await expect(returning.locator(".bingo-tile.filled")).toHaveCount(3);
+  await returning.close();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -101,6 +108,7 @@ test("create, invite, join, upload a winning line, review, and close", async ({
   ).toBeVisible();
   await expect(page.locator(".bingo-tile").nth(3)).toBeDisabled();
   await page.goto(participantUrl);
+  await page.getByRole("button", { name: "Join as someone else" }).click();
   await page.getByLabel("Your name").fill("Too late");
   await page.getByRole("button", { name: "Join room", exact: true }).click();
   await expect(page.getByRole("alert")).toHaveText("This room is closed.");

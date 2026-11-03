@@ -67,6 +67,40 @@ type Identity = {
 };
 type AdminRecord = { email: string; addedBy: string; addedAt: string };
 const tokenKey = "snaptiles-session";
+const sessionsKey = "snaptiles-sessions";
+const currentRoomKey = "snaptiles-current-room";
+type SavedSession = { token: string; name: string };
+
+function savedSessions(): Record<string, SavedSession> {
+  try {
+    const value = JSON.parse(localStorage.getItem(sessionsKey) || "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+function savedSession(roomCode: string | null | undefined) {
+  return roomCode ? savedSessions()[roomCode.toUpperCase()] : undefined;
+}
+function saveSession(roomCode: string, session: SavedSession) {
+  const room = roomCode.toUpperCase();
+  localStorage.setItem(
+    sessionsKey,
+    JSON.stringify({ ...savedSessions(), [room]: session }),
+  );
+  localStorage.setItem(currentRoomKey, room);
+}
+function forgetSession(roomCode: string | null | undefined) {
+  const sessions = savedSessions();
+  if (roomCode) delete sessions[roomCode.toUpperCase()];
+  localStorage.setItem(sessionsKey, JSON.stringify(sessions));
+  if (localStorage.getItem(currentRoomKey) === roomCode?.toUpperCase())
+    localStorage.removeItem(currentRoomKey);
+  sessionStorage.removeItem(tokenKey);
+}
+function boardPath(roomCode: string) {
+  return `/play/board?room=${encodeURIComponent(roomCode.toUpperCase())}`;
+}
 
 function Brand() {
   return (
@@ -172,11 +206,16 @@ function Header({ identity }: { identity: Identity | null }) {
 
 function Join() {
   const { code } = useParams();
-  const [roomCode, setRoomCode] = useState(code || "");
+  const [roomCode, setRoomCode] = useState((code || "").toUpperCase());
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [joinAnother, setJoinAnother] = useState(false);
   const navigate = useNavigate();
+  const existing = /^[A-Z2-9]{6}$/.test(roomCode)
+    ? savedSession(roomCode)
+    : undefined;
+  const currentRoom = localStorage.getItem(currentRoomKey);
   async function join(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -186,8 +225,11 @@ function Join() {
         method: "POST",
         body: { roomCode, displayName: name },
       });
-      sessionStorage.setItem(tokenKey, session.participantToken);
-      navigate("/play/board");
+      saveSession(session.game.roomCode, {
+        token: session.participantToken,
+        name: session.player.displayName,
+      });
+      navigate(boardPath(session.game.roomCode));
     } catch (failure) {
       setError(errorMessage(failure));
     } finally {
@@ -225,6 +267,25 @@ function Join() {
         </div>
         <h1>SnapTiles</h1>
         <p className="intro">Your next good moment is on the board.</p>
+        {existing && !joinAnother ? (
+          <div className="join-form resume-card">
+            <p>
+              You're already playing in room <strong>{roomCode}</strong> as{" "}
+              <strong>{existing.name}</strong>. Your photos are saved.
+            </p>
+            <Link className="primary wide" to={boardPath(roomCode)}>
+              Back to my board
+              <ArrowRight size={18} />
+            </Link>
+            <button
+              type="button"
+              className="text-link"
+              onClick={() => setJoinAnother(true)}
+            >
+              Join as someone else
+            </button>
+          </div>
+        ) : (
         <form className="join-form" onSubmit={join}>
           <label>
             Room code
@@ -266,8 +327,12 @@ function Join() {
             )}
           </button>
         </form>
-        {sessionStorage.getItem(tokenKey) && (
-          <Link className="text-link resume" to="/play/board">
+        )}
+        {!existing && (currentRoom || sessionStorage.getItem(tokenKey)) && (
+          <Link
+            className="text-link resume"
+            to={currentRoom ? boardPath(currentRoom) : "/play/board"}
+          >
             Back to my board
             <ArrowRight size={16} />
           </Link>
@@ -1397,7 +1462,15 @@ function UploadTile({
 }
 
 function PlayerBoard() {
-  const [token] = useState(() => sessionStorage.getItem(tokenKey) || "");
+  const [room] = useState(
+    () =>
+      new URLSearchParams(location.search).get("room")?.toUpperCase() ||
+      localStorage.getItem(currentRoomKey) ||
+      "",
+  );
+  const [token] = useState(
+    () => savedSession(room)?.token || sessionStorage.getItem(tokenKey) || "",
+  );
   const [game, setGame] = useState<PublicGame | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [error, setError] = useState("");
@@ -1413,10 +1486,15 @@ function PlayerBoard() {
       );
       setGame(session.game);
       setPlayer(session.player);
+      saveSession(session.game.roomCode, {
+        token,
+        name: session.player.displayName,
+      });
+      sessionStorage.removeItem(tokenKey);
       setError("");
     } catch (failure) {
       if (failure instanceof RequestError && failure.status === 401)
-        sessionStorage.removeItem(tokenKey);
+        forgetSession(room);
       setError(errorMessage(failure));
     } finally {
       setLoading(false);
@@ -1552,9 +1630,9 @@ function PlayerBoard() {
           {leave && (
             <Modal title="Leave this session?" onClose={() => setLeave(false)}>
               <p>
-                Your submitted photos will stay in the event. Joining again
-                creates a new board; this session will be removed from this
-                browser tab.
+                Your submitted photos will stay in the event, but this device
+                will no longer be able to open this board. Joining again
+                creates a new board.
               </p>
               <div className="form-actions">
                 <button className="secondary" onClick={() => setLeave(false)}>
@@ -1563,7 +1641,7 @@ function PlayerBoard() {
                 <button
                   className="primary"
                   onClick={() => {
-                    sessionStorage.removeItem(tokenKey);
+                    forgetSession(game.roomCode);
                     navigate("/");
                   }}
                 >

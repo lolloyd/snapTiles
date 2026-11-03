@@ -272,10 +272,11 @@ export function createService(
       return {
         game: publicGame(game),
         player,
-        participantToken: await auth.sign({
-          gameId: game.id,
-          playerId: player.id,
-        }),
+        participantToken: await auth.sign(
+          { gameId: game.id, playerId: player.id },
+          "participant",
+          "30d",
+        ),
       };
     }
     if (pathname === "/api/public/session" && method === "GET") {
